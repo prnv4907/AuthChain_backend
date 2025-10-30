@@ -4,7 +4,7 @@ import {
   LoginSchema,
   ProductSchema,
   SighnUPSchema,
-} from "../types/types";
+} from "../types/types.js";
 
 export const SighnupCheck = async (
   req: Request,

@@ -5,11 +5,11 @@ import {
   LoginCheck,
   ProdutCheck,
   SighnupCheck,
-} from "../middlewar/TypesMiddleware";
-require("dotenv").config();
+} from "../middlewar/TypesMiddleware.js";
+import "dotenv/config";
 import bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
-import { TokenCheck } from "../middlewar/TokenMiddleware";
+import { TokenCheck } from "../middlewar/TokenMiddleware.js";
 import {
   PublicKey,
   Connection,
@@ -19,8 +19,8 @@ import {
   SystemProgram,
 } from "@solana/web3.js";
 import anchor from "@coral-xyz/anchor";
-import idl from "/home/ghozt/Downloads/rust/solana/authChain/auth-chain-contract/target/idl/auth_chain_contract.json";
-import { InitializedProduct } from "../types/types";
+import idl from "../idl/auth_chain_contract.json" with { type: "json" };
+import { eventMiddleware } from "../middlewar/eventMiddleware.js";
 if (!process.env.JWT_SECRET) {
   throw new Error("Fatal error: jwt secret is not defined");
 }
@@ -40,13 +40,18 @@ const provider = new anchor.AnchorProvider(
 anchor.setProvider(provider);
 const programId = new PublicKey(idl.address);
 const program = new anchor.Program(idl, provider);
+if (!program) {
+  throw new Error(
+    "fatal: anchor program could not be initialized. Check your rpc, idl and provider",
+  );
+}
 
 console.log(
   `program loaded successfully, Program Id:${program.programId.toBase58()}`,
 );
 
-userRouter.post("/sighnUp", SighnupCheck, async (req, res) => {
-  const { username, firstName, lastName, email, password } = req.body;
+userRouter.post("/signUp", SighnupCheck, async (req, res) => {
+  const { username, firstName, lastName, email, password, account } = req.body;
   console.log(req.body.username);
   const isSuccess = await prisma.user.findUnique({
     where: {
@@ -67,11 +72,14 @@ userRouter.post("/sighnUp", SighnupCheck, async (req, res) => {
       password: hashedPassword,
       firstName: firstName,
       lastName: lastName,
+      account: account,
     },
   });
-  res.status(200).json(success);
+  res.status(200).json({
+    message: "user created",
+  });
 });
-userRouter.get("/login", LoginCheck, async (req, res) => {
+userRouter.post("/login", LoginCheck, async (req, res) => {
   const { username, password } = req.body;
   const user = await prisma.user.findFirst({
     where: {
@@ -104,10 +112,9 @@ userRouter.get("/login", LoginCheck, async (req, res) => {
     });
     res.status(200).json({
       message: "Logged in successfully",
-      token,
     });
   } catch (err) {
-    res.status(500).json(err);
+    res.status(500).json("unable to log in");
   }
 });
 userRouter.post(
@@ -125,7 +132,7 @@ userRouter.post(
     console.log(userId);
     if (!userId) {
       res.status(401).json({
-        message: "userId not assigner",
+        message: "invalid userId",
       });
     }
     const modelNo = req.body.modelNo;
@@ -154,21 +161,15 @@ userRouter.post(
           id: userId,
         },
       });
-      if (user == null) {
+      if (!user || !user.account) {
         res.status(500).json({
           message: "unable to fetch user details",
         });
         return;
       }
-      const userPublickey = user.account as string;
-      if (!program) {
-        res.status(400).json({
-          message: "program is null",
-        });
-        return;
-      }
-      const tx = await program.methods
-        .initialize(new anchor.BN(modelNo))
+
+      const userPublickey = user.account;
+      const tx = await program.methods.initialize!(new anchor.BN(modelNo))
         .accounts({
           signer: new PublicKey(userPublickey),
           pdaAccount: pdaAccount,
@@ -208,10 +209,12 @@ userRouter.post(
   },
 );
 
-userRouter.post("/event", EventCheck, async (req, res) => {
+userRouter.post("/event", eventMiddleware, EventCheck, async (req, res) => {
   const toAccount: string = req.body.toAccount;
   const fromAccount: string = req.body.fromAccount;
   const productAccount: string = req.body.productAccount;
+  const signature: string = req.body.signature;
+  const type: string = req.body.type;
   const product = await prisma.product.findUnique({
     where: {
       pdaAccount: productAccount,
@@ -223,16 +226,24 @@ userRouter.post("/event", EventCheck, async (req, res) => {
     });
     return;
   }
-
-  const productId = product.id;
-  const Event = await prisma.event.create({
-    data: {
-      fromAccount: fromAccount,
-      date: new Date(),
-      toAccount: toAccount,
-      productId: productId,
-    },
-  });
+  try {
+    const productId = product.id;
+    const Event = await prisma.event.create({
+      data: {
+        fromAccount: fromAccount,
+        date: new Date(),
+        toAccount: toAccount,
+        signature: signature,
+        type: type,
+        productId: productId,
+      },
+    });
+    res.json(200);
+  } catch (err) {
+    res.status(500).json({
+      message: "unable to create the database entry",
+    });
+  }
 });
 
 userRouter.post("/transfer", TokenCheck, async (req, res) => {
@@ -249,11 +260,17 @@ userRouter.post("/transfer", TokenCheck, async (req, res) => {
     return;
   }
   try {
+    if (!program) {
+      throw new Error("Blockchain program is not initialized.");
+    }
     const fromAddress = new PublicKey(fromAccount);
     const toAddress = new PublicKey(toAccount);
     const productAddress = new PublicKey(product.pdaAccount);
-    const tx: Transaction = await program.methods
-      .transfer(product?.modelNo, toAddress)
+
+    const tx: Transaction = await program.methods.transfer!(
+      product.modelNo,
+      toAddress,
+    )
       .accounts({
         signer: new PublicKey(fromAddress),
         pdaAccount: productAddress,
@@ -272,7 +289,6 @@ userRouter.post("/transfer", TokenCheck, async (req, res) => {
   } catch (err) {
     res.status(500).json({
       message: "internal error in transferring",
-      Error: err,
     });
   }
 });
@@ -287,6 +303,9 @@ userRouter.get("/initializedProducts", TokenCheck, async (req, res) => {
   const user = await prisma.user.findUnique({
     where: {
       id: userId,
+    },
+    include: {
+      products: true,
     },
   });
   if (user == null) {

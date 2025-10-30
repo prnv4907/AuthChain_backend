@@ -5,6 +5,7 @@ export const SighnUPSchema = z.object({
   lastName: z.string(),
   email: z.email(),
   password: z.string().min(6),
+  account: z.string(),
 });
 export const LoginSchema = z.object({
   username: z.string().min(3).max(10),
@@ -18,4 +19,6 @@ export const EventSchema = z.object({
   fromAccount: z.string(),
   toAccount: z.string(),
   productAccount: z.string(),
+  type: z.string(),
+  signature: z.string(),
 });

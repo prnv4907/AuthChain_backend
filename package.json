@@ -10,6 +10,11 @@
   "peerDependencies": {
     "typescript": "^5"
   },
+  "scripts": {
+    "start": "node ./dist/index.js",
+    "build": "bun install && tsc -b && npx prisma generate ",
+    "dev": "nodemon src/index.ts"
+  },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
     "@prisma/client": "^6.16.3",

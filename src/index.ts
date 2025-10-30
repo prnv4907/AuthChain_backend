@@ -1,5 +1,5 @@
 import express from "express";
-import userRouter from "./routes/userRoute";
+import userRouter from "./routes/userRoute.js";
 import cookieParser from "cookie-parser";
 const app = express();
 app.use(express.json());

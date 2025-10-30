@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
-require("dotenv").config();
+import "dotenv/config";
 interface AuthenticatedRequest extends Request {
   user?: { userId: number };
 }
